@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:aop="http://www.springframework.org/schema/aop"
+       xmlns:context="http://www.springframework.org/schema/context" xmlns:tx="http://www.springframework.org/schema/tx"
+       xmlns:jms="http://www.springframework.org/schema/jms"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+        http://www.springframework.org/schema/beans/spring-beans.xsd
+        http://www.springframework.org/schema/aop
+        http://www.springframework.org/schema/aop/spring-aop.xsd
+        http://www.springframework.org/schema/context
+        http://www.springframework.org/schema/context/spring-context.xsd http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx.xsd http://www.springframework.org/schema/jms http://www.springframework.org/schema/jms/spring-jms.xsd">
+
+
+    <!--使用注解时，bean使用自动扫描，AOP使用自动代理-->
+    <context:component-scan base-package="com.ma"/>
+    <!--读取配置文件-->
+    <context:property-placeholder location="classpath:config.properties"/>
+    <!--开启代理-->
+    <!--<aop:aspectj-autoproxy/>-->
+
+    <!--Spring jdbc数据源的配置-->
+    <bean class="org.apache.commons.dbcp2.BasicDataSource" id="dataSource">
+        <property name="driverClassName" value="${jdbc.driver}"/>
+        <property name="url" value="${jdbc.url}"/>
+        <property name="username" value="${jdbc.username}"/>
+        <property name="password" value="${jdbc.password}"/>
+    </bean>
+
+
+    <!--事务-->
+    <bean class="org.springframework.jdbc.datasource.DataSourceTransactionManager" id="transactionManager">
+        <property name="dataSource" ref="dataSource"/>
+    </bean>
+    <tx:annotation-driven transaction-manager="transactionManager"/>
+
+    <!--整合MyBatis-->
+    <!--把sqlSessionFactory交给Spring管理-->
+    <bean class="org.mybatis.spring.SqlSessionFactoryBean" id="sessionFactory">
+        <!--引用Spring中的数据源-->
+        <property name="dataSource" ref="dataSource"/>
+        <!--给哪些包中的类起别名-->
+        <property name="typeAliasesPackage" value="com.ma.entity"/>
+        <!--Mapper.xml的文件路径-->
+        <property name="mapperLocations" value="classpath:mapper/*.xml"/>
+        <!--其他配置，例如：映射下划线给驼峰命名-->
+        <property name="configuration">
+            <bean class="org.apache.ibatis.session.Configuration">
+                <property name="mapUnderscoreToCamelCase" value="true"/>
+            </bean>
+        </property>
+    </bean>
+    <!--自动扫描mapper接口，并产生实体类交给Spring管理-->
+    <bean class="org.mybatis.spring.mapper.MapperScannerConfigurer">
+        <property name="basePackage" value="com.ma.mapper"/>
+    </bean>
+
+    <!--redis-->
+    <!--reids连接池-->
+    <bean id="jedisPoolConfig" class="redis.clients.jedis.JedisPoolConfig">
+        <property name="maxWaitMillis" value="5000"/>
+        <property name="maxTotal" value="10"/>
+        <property name="maxIdle" value="8"/>
+        <property name="minIdle" value="3"/>
+    </bean>
+
+    <bean id="jedisPool" class="redis.clients.jedis.JedisPool" destroy-method="close">
+        <constructor-arg name="poolConfig" ref="jedisPoolConfig"/>
+        <constructor-arg name="host" value="39.108.51.94"/>
+        <constructor-arg name="port" value="6379"/>
+    </bean>
+
+    <bean class="org.springframework.scheduling.quartz.SchedulerFactoryBean" id="schedulerFactoryBean">
+        <!--配合ActiveMQ的使用-->
+        <property name="applicationContextSchedulerContextKey" value="springApplicationContext"/>
+        <!--数据源-->
+        <property name="dataSource" ref="dataSource"/>
+        <!--事务管理器-->
+        <property name="transactionManager" ref="transactionManager"/>
+        <!--quartz-properties.xml文件的位置-->
+        <property name="configLocation" value="classpath:/quartz.properties"/>
+        <!--如果任务相同是否覆盖数据库中的任务，false会报错-->
+        <property name="overwriteExistingJobs" value="true"/>
+
+    </bean>
+
+    <!--配置MQ链接工厂-->
+    <bean id="activeMQConnectionFactory" class="org.apache.activemq.ActiveMQConnectionFactory">
+        <property name="brokerURL" value="tcp://127.0.0.1:61616"/>
+    </bean>
+
+    <!--配置SpringleMsFactory-->
+    <bean id="singleConnectionFactory" class="org.springframework.jms.connection.SingleConnectionFactory">
+        <property name="targetConnectionFactory" ref="activeMQConnectionFactory"/>
+    </bean>
+
+    <!--配置JMSTemplete-->
+    <bean id="jmsTemplate" class="org.springframework.jms.core.JmsTemplate">
+        <property name="connectionFactory" ref="singleConnectionFactory"/>
+    </bean>
+
+    <!--jms监听-->
+    <!--配置JMSTemplete-->
+    <bean id="jmsListenerContainerFactory" class="org.springframework.jms.config.DefaultJmsListenerContainerFactory">
+        <property name="connectionFactory" ref="singleConnectionFactory"/>
+    </bean>
+    <jms:annotation-driven container-factory="jmsListenerContainerFactory"/>
+
+</beans>
